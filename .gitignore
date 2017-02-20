@@ -1,0 +1,30 @@
+# MacOS
+.DS_Store
+*.dSYM
+
+#make
+*.d
+
+# vim
+*.swp
+
+# emacs
+*~
+\#*\#
+
+# c/c++/objc
+*.o
+
+# exefile
+*.exe
+*.exe.mic
+
+# script file
+*.sh
+
+# data
+*.data
+*.dat
+
+# other
+stderr
