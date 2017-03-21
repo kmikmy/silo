@@ -11,4 +11,9 @@ namespace hpcs {
 		static std::atomic<uint32_t> globalEpoch;
 		static std::atomic<uint32_t> durableEpoch;
     }; // class Epoch
+
+	class FOID{
+	public:
+		static uint32_t gapFillInterval;
+	};
 }

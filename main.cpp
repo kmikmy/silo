@@ -69,6 +69,7 @@ void worker_thread(uint64_t threadId) {
 		} else {
 			++abortCounter;
 		}
+		workers[threadId].durableCheck();
 		workers[threadId].reply();
 	}
 	entireLatency[threadId] = workers[threadId].entireLatency_;
@@ -188,6 +189,7 @@ int main(int argc, char *argv[]) {
 
 	/* max epoch = 40 ms */
 	p.add<int>("epoch", 'e', "( 0 - 40 * 1000 [us])", false, 0, cmdline::range(0, 40000));
+	p.add<int>("gapFillInterval", 'i', "( 0 - 40000 )", false, 1, cmdline::range(0, 40000));
 
 	p.parse_check(argc, argv);
 
@@ -198,19 +200,33 @@ int main(int argc, char *argv[]) {
 		hpcs::Epoch::epoch_us = 0; // [default] for vanishing compiler message
 		hpcs::Epoch::epoch_flag = false; // flag for silo-tid
 	}
-	//  std::cout << "epoch_flag: " << epoch_flag << ", epoch: " << epoch_duration << std::endl;
+	//	std::cout << "epoch_flag: " << hpcs::Epoch::epoch_flag << ", epoch: " << hpcs::Epoch::epoch_us << std::endl;
+
+	if(p.exist("gapFillInterval")){ // only for FOID
+		hpcs::FOID::gapFillInterval = p.get<int>("gapFillInterval");;
+	} else {
+		hpcs::FOID::gapFillInterval = 1;
+	}
+	//	std::cout << "gapFillInterval: " << hpcs::FOID::gapFillInterval << std::endl;
 
 	hpcs::util::TS::setDiffTs();
 
 	std::cout << "#thread #throughput(tx/sec) #totalPrecommitTx #totalReplyTx #totalAbortTx #entireLatency(us) #precommitLatency(us)" << std::endl;
 
-	for(uint64_t n = 1; n <= 237; ++n){
+	//
+	for(uint64_t n = 1; n <= 57; ++n){
 		init(n);
 		omp_set_num_threads(n+3);
 
 #pragma omp parallel
 		{
 			int thread_num = omp_get_thread_num();
+			cpu_set_t mask;
+			CPU_ZERO(&mask);
+			CPU_SET(thread_num*4, &mask);
+			/* set affinity to current thread */
+			sched_setaffinity(0, sizeof(mask), &mask);
+
 			if(thread_num == 0){ // for measurement thread
 				sleep(1);
 				gettimeofday(&begin, NULL);

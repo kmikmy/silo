@@ -25,11 +25,11 @@ namespace hpcs {
 							uint64_t localTid)
 		{
 			uint64_t commitTid = 0;
-			std::vector<hpcs::Record> readSet(0), writeSet(1);
+			std::vector<hpcs::Record> readSet(1), writeSet(1);
 
 			for (size_t i = 0; i < 1; ++i) {
 				uint64_t recId = randGen.next() & DB_SIZE; // 2^16
-				writeSet[i] = database.getRecord(recId);
+				readSet[i] = writeSet[i] = database.getRecord(recId);
 				++writeSet[i].val_;
 			}
 
@@ -41,6 +41,7 @@ namespace hpcs {
 			}
 			std::sort(wsIds.begin(), wsIds.end());
 			size_t lock_num = 0;
+
 			for(uint64_t wrid : wsIds){
 				if ( !database.trylock(wrid) ){
 					break;

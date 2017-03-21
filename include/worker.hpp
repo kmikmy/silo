@@ -30,8 +30,10 @@ namespace hpcs {
 		std::atomic<uint64_t> localEpoch_;
 		std::atomic<uint64_t> localTid_;
 		std::atomic<uint64_t> durableTid_;
-		std::queue<Client> commitQueue_;
+		std::queue<Client> preflushQueue_;
+		std::queue<Client> precommitQueue_;
 		uint64_t before_ctid_count_;
+		uint32_t txCountForGapFilling;
 
 	public:
 		static hpcs::DB database;
@@ -48,12 +50,15 @@ namespace hpcs {
 
 		void init(uint64_t threadId) {
 			threadId_ = threadId;
-			localEpoch_ = before_ctid_count_ = commitTxNum_ = precommitLatency_ = entireLatency_ = durableTid_ = localTid_ = 0;
+			commitTxNum_ = precommitLatency_ = entireLatency_ = durableTid_ = localTid_ = 0;
+			localEpoch_ = before_ctid_count_ = txCountForGapFilling = 0;
 			for(size_t i = 0; i < threadId; i++){
 				randGen.jump();
 			}
-			std::queue<Client> empty;
-			std::swap( commitQueue_, empty );
+			std::queue<Client> empty1;
+			std::swap( preflushQueue_, empty1 );
+			std::queue<Client> empty2;
+			std::swap( precommitQueue_, empty2 );
 		}
 		uint64_t getLocalTid() {
 			return localTid_.load();
@@ -71,12 +76,20 @@ namespace hpcs {
 
 			hpcs::util::_mm_pause();
 			if( hpcs::Epoch::epoch_flag ){
+				// epoch
 				localEpoch_.store(hpcs::Epoch::globalEpoch.load());
-			} else {
-				uint64_t maxTid = entireMaxLocalTid.load();
-				if(localTid_ < maxTid){
-					localTid_ = maxTid;
+			} else if (hpcs::FOID::gapFillInterval) {
+				// FOID with gap filling
+				++txCountForGapFilling;
+				if(txCountForGapFilling >= hpcs::FOID::gapFillInterval){
+					txCountForGapFilling = 0;
+					uint64_t maxTid = entireMaxLocalTid.load();
+					if(localTid_ < maxTid){
+						localTid_ = maxTid;
+					}
 				}
+			} else {
+				// FOID without gap filling
 			}
 			hpcs::util::_mm_pause();
 
@@ -85,20 +98,36 @@ namespace hpcs {
 				localTid_.store(commitTid >> 3);
 
 				client.ctid = commitTid >> 3;
-				hpcs::util::TS::microSleep(5); // wal flush
-				client.flushedTs = hpcs::util::TS::normalizedRdtsc();
+				// hpcs::util::TS::microSleep(5); // wal flush
+				// client.flushedTs = hpcs::util::TS::normalizedRdtsc();
 
-				commitQueue_.push(client);
-				durableTid_.store(localTid_.load());
+				preflushQueue_.push(client);
 			}
 
 			//			std::cout << "entireLatency: " << entireLatency_ << std::endl;
 
 			return commitTid >> 3;
 		}
+		void durableCheck(){
+			while(!preflushQueue_.empty()){
+				Client client = preflushQueue_.front();
+				uint64_t currentTs = hpcs::util::TS::normalizedRdtsc();
+				if( hpcs::util::TS::clockToUSec(currentTs - client.startTs) < 5 ) {
+					return;
+				}
+
+				// 40 usec を過ぎていたら durable とみなす
+				preflushQueue_.pop();
+				client.flushedTs = hpcs::util::TS::normalizedRdtsc();
+				client.flushedTsCpuId =  sched_getcpu();
+				precommitQueue_.push(client);
+
+				durableTid_.store(client.ctid);
+			}
+		}
 		void reply(){
-			while(!commitQueue_.empty()){
-				Client client = commitQueue_.front();
+			while(!precommitQueue_.empty()){
+				Client client = precommitQueue_.front();
 				//				std::cout << "client.ctid: " << client.ctid << std::endl;
 
 				if( hpcs::Epoch::epoch_flag){
@@ -122,7 +151,7 @@ namespace hpcs {
 				before_ctid_count_ = 0;
 
 				// client reply
-				commitQueue_.pop();
+				precommitQueue_.pop();
 				client.endTs = hpcs::util::TS::normalizedRdtsc();
 				client.endTsCpuId = sched_getcpu();
 

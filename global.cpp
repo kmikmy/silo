@@ -3,6 +3,7 @@
 #include "include/db.hpp"
 #include "include/worker.hpp"
 #include "include/rdtsc.hpp"
+#include "include/epoch.hpp"
 
 hpcs::DB hpcs::Worker::database;
 std::atomic<uint64_t> hpcs::Worker::entireDurableTid;
@@ -13,3 +14,4 @@ bool hpcs::Epoch::epoch_flag = false;
 uint64_t hpcs::Epoch::epoch_us = 0;
 std::atomic<uint32_t> hpcs::Epoch::globalEpoch = 0;
 std::atomic<uint32_t> hpcs::Epoch::durableEpoch = 0;
+uint32_t hpcs::FOID::gapFillInterval = 1;
